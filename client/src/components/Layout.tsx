@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { UtensilsCrossed, LogOut, User, Menu, X } from "lucide-react";
@@ -14,7 +13,7 @@ const navItems = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuth();
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -76,7 +75,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 variant="default"
                 size="sm"
                 className="bg-gradient-to-r from-primary to-[oklch(0.6_0.12_25)] text-primary-foreground shadow-sm"
-                onClick={() => { window.location.href = getLoginUrl(); }}
+                onClick={() => navigate("/auth")}
               >
                 登录
               </Button>
@@ -130,9 +129,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       variant="default"
                       size="sm"
                       className="w-full"
-                      onClick={() => { window.location.href = getLoginUrl(); }}
+                      onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }}
                     >
-                      登录
+                      登录 / 注册
                     </Button>
                   )}
                 </div>

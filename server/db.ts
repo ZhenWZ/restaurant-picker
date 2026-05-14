@@ -89,6 +89,38 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+// ==================== Auth Queries ====================
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createUserWithPassword(username: string, passwordHash: string, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const openId = `local_${username}`; // Generate a unique openId for local users
+  await db.insert(users).values({
+    openId,
+    username,
+    passwordHash,
+    name,
+    loginMethod: "password",
+    lastSignedIn: new Date(),
+  });
+  const created = await getUserByUsername(username);
+  return created;
+}
+
 // ==================== Restaurant Queries ====================
 
 export async function getAllRestaurants() {

@@ -4,6 +4,9 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import { SignJWT } from "jose";
+import { ENV } from "./_core/env";
 import {
   getAllRestaurants,
   getRestaurantById,
@@ -20,6 +23,8 @@ import {
   addToBlacklist,
   removeFromBlacklist,
   getRestaurantsForPick,
+  getUserByUsername,
+  createUserWithPassword,
 } from "./db";
 
 // Admin-only middleware
@@ -30,6 +35,16 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// Helper to create JWT token
+async function createToken(userId: number) {
+  const secret = new TextEncoder().encode(ENV.jwtSecret);
+  const token = await new SignJWT({ userId })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("7d")
+    .sign(secret);
+  return token;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -38,6 +53,64 @@ export const appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
+    }),
+
+    // Register with username/password
+    register: publicProcedure.input(z.object({
+      username: z.string().min(3, "用户名至少3个字符").max(32, "用户名最多32个字符").regex(/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, "用户名只能包含字母、数字、下划线和中文"),
+      password: z.string().min(6, "密码至少6个字符").max(64),
+      name: z.string().min(1, "昵称不能为空").max(32),
+    })).mutation(async ({ ctx, input }) => {
+      // Check if username already exists
+      const existing = await getUserByUsername(input.username);
+      if (existing) {
+        throw new TRPCError({ code: "CONFLICT", message: "该用户名已被注册" });
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(input.password, 10);
+
+      // Create user
+      const user = await createUserWithPassword(input.username, passwordHash, input.name);
+      if (!user) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "注册失败，请稍后重试" });
+      }
+
+      // Create session token and set cookie
+      const token = await createToken(user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+      return {
+        success: true,
+        user: { id: user.id, name: user.name, username: user.username, role: user.role },
+      };
+    }),
+
+    // Login with username/password
+    login: publicProcedure.input(z.object({
+      username: z.string().min(1),
+      password: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      const user = await getUserByUsername(input.username);
+      if (!user || !user.passwordHash) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "用户名或密码错误" });
+      }
+
+      const valid = await bcrypt.compare(input.password, user.passwordHash);
+      if (!valid) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "用户名或密码错误" });
+      }
+
+      // Create session token and set cookie
+      const token = await createToken(user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+      return {
+        success: true,
+        user: { id: user.id, name: user.name, username: user.username, role: user.role },
+      };
     }),
   }),
 

@@ -257,56 +257,78 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
-    const session = await this.verifySession(sessionCookie);
 
-    if (!session) {
-      throw ForbiddenError("Invalid session cookie");
+    if (!sessionCookie) {
+      throw ForbiddenError("Missing session cookie");
     }
 
-    if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-      const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-      const taskUid = userInfo.taskUid ?? null;
-      if (!taskUid) {
-        throw ForbiddenError("Cron session missing task_uid");
+    // Try to verify as local password JWT (contains userId)
+    try {
+      const secretKey = this.getSessionSecret();
+      const { payload } = await jwtVerify(sessionCookie, secretKey, {
+        algorithms: ["HS256"],
+      });
+
+      // Local password auth token contains userId
+      if (payload.userId && typeof payload.userId === "number") {
+        const user = await db.getUserById(payload.userId as number);
+        if (!user) {
+          throw ForbiddenError("User not found");
+        }
+        return user;
       }
-      return buildCronUser(userInfo);
-    }
 
-    const sessionUserId = session.openId;
-    const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
-
-    // If user not in DB, sync from OAuth server automatically
-    if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+      // OAuth session token contains openId
+      const { openId, appId, name } = payload as Record<string, unknown>;
+      if (!isNonEmptyString(openId)) {
+        throw ForbiddenError("Invalid session payload");
       }
+
+      if ((openId as string).startsWith(CRON_OPEN_ID_PREFIX)) {
+        const userInfo = await this.getUserInfoWithJwt(sessionCookie);
+        const taskUid = userInfo.taskUid ?? null;
+        if (!taskUid) {
+          throw ForbiddenError("Cron session missing task_uid");
+        }
+        return buildCronUser(userInfo);
+      }
+
+      const signedInAt = new Date();
+      let user = await db.getUserByOpenId(openId as string);
+
+      if (!user) {
+        try {
+          const userInfo = await this.getUserInfoWithJwt(sessionCookie);
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        } catch (error) {
+          console.error("[Auth] Failed to sync user from OAuth:", error);
+          throw ForbiddenError("Failed to sync user info");
+        }
+      }
+
+      if (!user) {
+        throw ForbiddenError("User not found");
+      }
+
+      await db.upsertUser({
+        openId: user.openId,
+        lastSignedIn: signedInAt,
+      });
+
+      return user;
+    } catch (error: any) {
+      if (error?.message?.includes("Forbidden")) throw error;
+      throw ForbiddenError("Invalid session");
     }
-
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
-    return user;
   }
 }
 

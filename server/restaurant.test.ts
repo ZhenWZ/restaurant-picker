@@ -39,6 +39,28 @@ vi.mock("./db", () => ({
     { id: 1, name: "海底捞", description: "火锅", category: "火锅", createdBy: 1, weight: 4.5 },
     { id: 3, name: "西贝", description: "西北菜", category: "中餐", createdBy: 1, weight: 3 },
   ]),
+  getUserByUsername: vi.fn().mockResolvedValue(undefined),
+  createUserWithPassword: vi.fn().mockResolvedValue({
+    id: 10,
+    openId: "local_testuser",
+    username: "testuser",
+    name: "Test",
+    role: "user",
+    passwordHash: "$2a$10$hashedpassword",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  }),
+  getUserById: vi.fn().mockResolvedValue({
+    id: 1,
+    openId: "local_testuser",
+    username: "testuser",
+    name: "Test User",
+    role: "user",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  }),
 }));
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
@@ -280,5 +302,49 @@ describe("blacklist", () => {
     const result = await caller.blacklist.remove({ restaurantId: 2 });
 
     expect(result).toEqual({ success: true });
+  });
+});
+
+describe("auth.register", () => {
+  it("registers a new user", async () => {
+    const ctx = createPublicContext();
+    (ctx.res as any).cookie = vi.fn();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auth.register({
+      username: "testuser",
+      password: "password123",
+      name: "Test",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.user).toHaveProperty("username", "testuser");
+    expect((ctx.res as any).cookie).toHaveBeenCalled();
+  });
+
+  it("rejects duplicate username", async () => {
+    const { getUserByUsername } = await import("./db");
+    (getUserByUsername as any).mockResolvedValueOnce({
+      id: 1, username: "existing", openId: "local_existing",
+    });
+
+    const ctx = createPublicContext();
+    (ctx.res as any).cookie = vi.fn();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.auth.register({ username: "existing", password: "password123", name: "Test" })
+    ).rejects.toThrow("该用户名已被注册");
+  });
+});
+
+describe("auth.login", () => {
+  it("rejects non-existent user", async () => {
+    const ctx = createPublicContext();
+    (ctx.res as any).cookie = vi.fn();
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.auth.login({ username: "nonexist", password: "pass" })
+    ).rejects.toThrow("用户名或密码错误");
   });
 });
