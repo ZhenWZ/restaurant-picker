@@ -31,6 +31,8 @@ function SlotColumn({
   const [showResult, setShowResult] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spinSessionRef = useRef(0);
   const tickRef = useRef(0);
 
   const getRandomItem = useCallback(() => {
@@ -42,9 +44,17 @@ function SlotColumn({
 
   useEffect(() => {
     if (isSpinning) {
+      spinSessionRef.current += 1;
+      const sessionId = spinSessionRef.current;
+
       setStopped(false);
       setShowResult(false);
       tickRef.current = 0;
+
+      if (revealTimeoutRef.current) {
+        clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = null;
+      }
 
       // Generate initial display items (3 visible in the column)
       setDisplayItems([getRandomItem(), getRandomItem(), getRandomItem()]);
@@ -62,7 +72,11 @@ function SlotColumn({
           if (intervalRef.current) clearInterval(intervalRef.current);
           setStopped(true);
           // Small delay before showing final result for dramatic effect
-          setTimeout(() => setShowResult(true), 150);
+          revealTimeoutRef.current = setTimeout(() => {
+            if (spinSessionRef.current === sessionId) {
+              setShowResult(true);
+            }
+          }, 150);
           return;
         }
 
@@ -101,6 +115,7 @@ function SlotColumn({
         clearInterval(intervalRef.current);
       }
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
     };
   }, [isSpinning, delay, getRandomItem, result]);
 
