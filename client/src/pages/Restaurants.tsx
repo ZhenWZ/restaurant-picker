@@ -44,6 +44,7 @@ export default function Restaurants() {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newCategory, setNewCategory] = useState("");
+  const [newEmoji, setNewEmoji] = useState("");
   const [batchText, setBatchText] = useState("");
 
   const utils = trpc.useUtils();
@@ -59,6 +60,7 @@ export default function Restaurants() {
       setNewName("");
       setNewDescription("");
       setNewCategory("");
+      setNewEmoji("");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -145,6 +147,7 @@ export default function Restaurants() {
       name: newName.trim(),
       description: newDescription.trim() || undefined,
       category: newCategory.trim() || undefined,
+      emoji: newEmoji.trim() || undefined,
     });
   };
 
@@ -155,12 +158,13 @@ export default function Restaurants() {
       return;
     }
     const items = lines.map(line => {
-      // Support format: "name | category | description" or just "name"
+      // Support format: "name | category | description | emoji" or just "name"
       const parts = line.split("|").map(p => p.trim());
       return {
         name: parts[0],
         category: parts[1] || undefined,
         description: parts[2] || undefined,
+        emoji: parts[3] || undefined,
       };
     });
     batchCreateMutation.mutate({ restaurants: items });
@@ -178,6 +182,7 @@ export default function Restaurants() {
       name: editingRestaurant.name,
       description: editingRestaurant.description || undefined,
       category: editingRestaurant.category || undefined,
+      emoji: editingRestaurant.emoji || undefined,
     });
   };
 
@@ -281,7 +286,12 @@ export default function Restaurants() {
               )}
 
               <div className="mb-3">
-                <h3 className="font-semibold text-base">{restaurant.name}</h3>
+                <div className="flex items-center gap-2">
+                  {restaurant.emoji && (
+                    <span className="text-2xl">{restaurant.emoji}</span>
+                  )}
+                  <h3 className="font-semibold text-base">{restaurant.name}</h3>
+                </div>
                 {restaurant.category && (
                   <span className="inline-block text-xs text-muted-foreground mt-1 px-2 py-0.5 rounded-full bg-secondary">
                     {restaurant.category}
@@ -405,6 +415,14 @@ export default function Restaurants() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Emoji 图标</Label>
+              <Input
+                placeholder="例如：🌶️🍲、🍗🍔"
+                value={newEmoji}
+                onChange={(e) => setNewEmoji(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
               <Label>描述</Label>
               <Textarea
                 placeholder="简短描述（可选）"
@@ -431,12 +449,12 @@ export default function Restaurants() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <p className="text-sm text-muted-foreground">
-              每行一家餐厅，格式：<code className="px-1.5 py-0.5 rounded bg-muted text-xs">名称 | 分类 | 描述</code>
+              每行一家餐厅，格式：<code className="px-1.5 py-0.5 rounded bg-muted text-xs">名称 | 分类 | 描述 | emoji</code>
               <br />
-              分类和描述可省略，只填名称也可以。
+              分类、描述和 emoji 可省略，只填名称也可以。
             </p>
             <Textarea
-              placeholder={`海底捞 | 火锅 | 服务好\n西贝莜面村 | 西北菜\n麦当劳\n肯德基 | 快餐`}
+              placeholder={`海底捞 | 火锅 | 服务好 | 🌶️🍲\n西贝菜面村 | 西北菜\n麦当劳\n肯德基 | 快餐 | | 🍗🍔`}
               value={batchText}
               onChange={(e) => setBatchText(e.target.value)}
               rows={8}
@@ -472,6 +490,14 @@ export default function Restaurants() {
                 <Input
                   value={editingRestaurant.category || ""}
                   onChange={(e) => setEditingRestaurant({ ...editingRestaurant, category: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Emoji 图标</Label>
+                <Input
+                  value={editingRestaurant.emoji || ""}
+                  onChange={(e) => setEditingRestaurant({ ...editingRestaurant, emoji: e.target.value })}
+                  placeholder="例如：🌶️🍲"
                 />
               </div>
               <div className="space-y-2">

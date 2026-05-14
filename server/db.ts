@@ -247,3 +247,37 @@ export async function getRestaurantsForPick(userId: number | null, useWeights: b
     weight: ratingsMap.get(r.id) || 3, // Default weight of 3 (middle) for unrated
   }));
 }
+
+// ==================== Seed Data ====================
+
+const DEFAULT_RESTAURANTS = [
+  { name: "麻辣烫", description: "热辣鲜香，自选食材", category: "中餐", emoji: "🌶️🍲" },
+  { name: "烤鱼", description: "香辣烤鱼，鲜嫩入味", category: "中餐", emoji: "🐟🔥" },
+  { name: "肉夹馍", description: "陕西传统美食，外酥里嫩", category: "小吃", emoji: "🥙🥩" },
+  { name: "杀猪粉", description: "贵州特色米粉，浓郁鲜香", category: "粉面", emoji: "🐷🍜" },
+  { name: "南昌拌粉", description: "江西特色，爽滑弹牙", category: "粉面", emoji: "🌶️🥢" },
+  { name: "跷脚牛肉", description: "四川乐山名吃，汤鲜肉嫩", category: "中餐", emoji: "🐂🍖" },
+  { name: "炒饭", description: "经典蛋炒饭，粒粒分明", category: "快餐", emoji: "🍳🍚" },
+  { name: "KFC", description: "炸鸡汉堡，快捷美味", category: "快餐", emoji: "🍗🍔" },
+  { name: "沙拉", description: "新鲜蔬果，健康轻食", category: "轻食", emoji: "🥗🥑" },
+];
+
+/**
+ * Seed default restaurants if the table is empty (idempotent).
+ * Called on server startup.
+ */
+export async function seedDefaultRestaurants() {
+  const db = await getDb();
+  if (!db) return;
+
+  const existing = await db.select({ id: restaurants.id }).from(restaurants).limit(1);
+  if (existing.length > 0) return; // Already has data, skip seeding
+
+  await db.insert(restaurants).values(
+    DEFAULT_RESTAURANTS.map(r => ({
+      ...r,
+      createdBy: 0, // System-created
+    }))
+  );
+  console.log("[Seed] Default restaurants inserted successfully");
+}

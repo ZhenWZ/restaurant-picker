@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UtensilsCrossed } from "lucide-react";
 
@@ -7,12 +7,13 @@ interface SlotResult {
   name: string;
   description: string | null;
   category: string | null;
+  emoji?: string | null;
 }
 
 interface SlotMachineProps {
   results: SlotResult[] | null;
   isSpinning: boolean;
-  allRestaurants: { id: number; name: string }[];
+  allRestaurants: { id: number; name: string; emoji?: string | null }[];
 }
 
 function SlotColumn({
@@ -24,9 +25,9 @@ function SlotColumn({
   result: SlotResult | null;
   isSpinning: boolean;
   delay: number;
-  allRestaurants: { id: number; name: string }[];
+  allRestaurants: { id: number; name: string; emoji?: string | null }[];
 }) {
-  const [displayItems, setDisplayItems] = useState<string[]>([]);
+  const [currentDisplay, setCurrentDisplay] = useState<{ name: string; emoji?: string | null } | null>(null);
   const [stopped, setStopped] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,15 +35,16 @@ function SlotColumn({
   useEffect(() => {
     if (isSpinning) {
       setStopped(false);
-      // Generate random items to display during spinning
-      const names = allRestaurants.length > 0
-        ? allRestaurants.map(r => r.name)
-        : ["餐厅A", "餐厅B", "餐厅C", "餐厅D", "餐厅E"];
+      setCurrentDisplay(null);
+
+      const items = allRestaurants.length > 0
+        ? allRestaurants
+        : [{ id: 0, name: "?", emoji: "🎰" }];
 
       intervalRef.current = setInterval(() => {
-        const shuffled = [...names].sort(() => Math.random() - 0.5);
-        setDisplayItems(shuffled.slice(0, 5));
-      }, 80);
+        const randomItem = items[Math.floor(Math.random() * items.length)];
+        setCurrentDisplay(randomItem);
+      }, 90);
 
       // Stop after delay
       timeoutRef.current = setTimeout(() => {
@@ -58,28 +60,31 @@ function SlotColumn({
   }, [isSpinning, delay, allRestaurants]);
 
   return (
-    <div className="relative w-full h-40 sm:h-48 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card to-secondary/30 shadow-inner">
+    <div className="relative w-full h-44 sm:h-52 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card to-secondary/30 shadow-inner">
       {/* Top gradient overlay */}
-      <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-card to-transparent z-10 pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-card to-transparent z-10 pointer-events-none" />
       {/* Bottom gradient overlay */}
-      <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent z-10 pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-card to-transparent z-10 pointer-events-none" />
 
       {/* Center highlight line */}
-      <div className="absolute top-1/2 left-2 right-2 -translate-y-1/2 h-14 rounded-xl border-2 border-[oklch(0.75_0.15_75/0.5)] bg-[oklch(0.75_0.15_75/0.05)] z-20 pointer-events-none" />
+      <div className="absolute top-1/2 left-2 right-2 -translate-y-1/2 h-16 rounded-xl border-2 border-[oklch(0.75_0.15_75/0.5)] bg-[oklch(0.75_0.15_75/0.05)] z-20 pointer-events-none" />
 
       <div className="flex flex-col items-center justify-center h-full">
         <AnimatePresence mode="wait">
-          {!stopped && displayItems.length > 0 ? (
+          {!stopped && currentDisplay ? (
             <motion.div
-              key={displayItems[0]}
-              initial={{ y: -20, opacity: 0 }}
+              key={`spin-${currentDisplay.name}-${Math.random()}`}
+              initial={{ y: -30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
+              exit={{ y: 30, opacity: 0 }}
               transition={{ duration: 0.06 }}
-              className="text-center px-4"
+              className="text-center px-3"
             >
-              <span className="text-lg sm:text-xl font-semibold text-foreground/70">
-                {displayItems[0]}
+              {currentDisplay.emoji && (
+                <span className="text-3xl sm:text-4xl block mb-1">{currentDisplay.emoji}</span>
+              )}
+              <span className="text-sm sm:text-base font-medium text-foreground/70 line-clamp-1">
+                {currentDisplay.name}
               </span>
             </motion.div>
           ) : result ? (
@@ -88,13 +93,23 @@ function SlotColumn({
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-              className="text-center px-4"
+              className="text-center px-3"
             >
-              <p className="text-xl sm:text-2xl font-bold text-foreground" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+              {result.emoji && (
+                <motion.span
+                  initial={{ scale: 0.5 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1], delay: 0.1 }}
+                  className="text-4xl sm:text-5xl block mb-2"
+                >
+                  {result.emoji}
+                </motion.span>
+              )}
+              <p className="text-lg sm:text-xl font-bold text-foreground" style={{ fontFamily: "'Noto Serif SC', serif" }}>
                 {result.name}
               </p>
               {result.category && (
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1">
                   {result.category}
                 </p>
               )}

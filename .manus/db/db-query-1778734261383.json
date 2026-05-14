@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO `restaurants` (`name`, `description`, `category`, `emoji`, `createdBy`) VALUES\n('麻辣烫', '热辣鲜香，自选食材', '中餐', '🌶️🍲', 0),\n('烤鱼', '香辣烤鱼，鲜嫩入味', '中餐', '🐟🔥', 0),\n('肉夹馍', '陕西传统美食，外酥里嫩', '小吃', '🥙🥩', 0),\n('杀猪粉', '贵州特色米粉，浓郁鲜香', '粉面', '🐷🍜', 0),\n('南昌拌粉', '江西特色，爽滑弹牙', '粉面', '🌶️🥢', 0),\n('跷脚牛肉', '四川乐山名吃，汤鲜肉嫩', '中餐', '🐂🍖', 0),\n('炒饭', '经典蛋炒饭，粒粒分明', '快餐', '🍳🍚', 0),\n('KFC', '炸鸡汉堡，快捷美味', '快餐', '🍗🍔', 0),\n('沙拉', '新鲜蔬果，健康轻食', '轻食', '🥗🥑', 0);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user vUmN85twF1H5DWA.root --database ZYhuZB4vSWVMdDTKSzjd8D --execute INSERT INTO `restaurants` (`name`, `description`, `category`, `emoji`, `createdBy`) VALUES\n('麻辣烫', '热辣鲜香，自选食材', '中餐', '🌶️🍲', 0),\n('烤鱼', '香辣烤鱼，鲜嫩入味', '中餐', '🐟🔥', 0),\n('肉夹馍', '陕西传统美食，外酥里嫩', '小吃', '🥙🥩', 0),\n('杀猪粉', '贵州特色米粉，浓郁鲜香', '粉面', '🐷🍜', 0),\n('南昌拌粉', '江西特色，爽滑弹牙', '粉面', '🌶️🥢', 0),\n('跷脚牛肉', '四川乐山名吃，汤鲜肉嫩', '中餐', '🐂🍖', 0),\n('炒饭', '经典蛋炒饭，粒粒分明', '快餐', '🍳🍚', 0),\n('KFC', '炸鸡汉堡，快捷美味', '快餐', '🍗🍔', 0),\n('沙拉', '新鲜蔬果，健康轻食', '轻食', '🥗🥑', 0);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 275
+}

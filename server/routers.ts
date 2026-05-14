@@ -67,11 +67,13 @@ export const appRouter = router({
       name: z.string().min(1, "餐厅名称不能为空").max(255),
       description: z.string().max(500).optional(),
       category: z.string().max(100).optional(),
+      emoji: z.string().max(32).optional(),
     })).mutation(async ({ ctx, input }) => {
       return createRestaurant({
         name: input.name,
         description: input.description ?? null,
         category: input.category ?? null,
+        emoji: input.emoji ?? null,
         createdBy: ctx.user.id,
       });
     }),
@@ -82,12 +84,14 @@ export const appRouter = router({
         name: z.string().min(1).max(255),
         description: z.string().max(500).optional(),
         category: z.string().max(100).optional(),
+        emoji: z.string().max(32).optional(),
       })).min(1).max(100),
     })).mutation(async ({ ctx, input }) => {
       const items = input.restaurants.map(r => ({
         name: r.name,
         description: r.description ?? null,
         category: r.category ?? null,
+        emoji: r.emoji ?? null,
         createdBy: ctx.user.id,
       }));
       await createRestaurantsBatch(items);
@@ -100,6 +104,7 @@ export const appRouter = router({
       name: z.string().min(1).max(255).optional(),
       description: z.string().max(500).optional(),
       category: z.string().max(100).optional(),
+      emoji: z.string().max(32).optional(),
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       const existing = await getRestaurantById(id);
@@ -150,6 +155,7 @@ export const appRouter = router({
         name: p.name,
         description: p.description,
         category: p.category,
+        emoji: p.emoji,
       }));
     }),
   }),

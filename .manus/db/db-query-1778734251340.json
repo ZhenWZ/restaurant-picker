@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `restaurants` ADD `emoji` varchar(32);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user vUmN85twF1H5DWA.root --database ZYhuZB4vSWVMdDTKSzjd8D --execute ALTER TABLE `restaurants` ADD `emoji` varchar(32);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 959
+}

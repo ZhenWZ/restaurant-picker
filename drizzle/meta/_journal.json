@@ -15,6 +15,13 @@
       "when": 1778732160646,
       "tag": "0001_mean_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778734241210,
+      "tag": "0002_dazzling_sauron",
+      "breakpoints": true
     }
   ]
 }

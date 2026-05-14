@@ -22,6 +22,7 @@ interface PickResult {
   name: string;
   description: string | null;
   category: string | null;
+  emoji?: string | null;
 }
 
 export default function Home() {
@@ -38,7 +39,7 @@ export default function Home() {
   const rateMutation = trpc.rating.upsert.useMutation();
 
   const allRestaurants = useMemo(() => {
-    return (restaurantList || []).map(r => ({ id: r.id, name: r.name }));
+    return (restaurantList || []).map(r => ({ id: r.id, name: r.name, emoji: r.emoji }));
   }, [restaurantList]);
 
   const handleSpin = async () => {
