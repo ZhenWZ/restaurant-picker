@@ -42,10 +42,6 @@ export default function Home() {
   }, [restaurantList]);
 
   const handleSpin = async () => {
-    if (!isAuthenticated) {
-      toast.error("请先登录后再抽取餐厅");
-      return;
-    }
     if (allRestaurants.length === 0) {
       toast.error("还没有餐厅数据，请先添加餐厅");
       return;
@@ -157,7 +153,7 @@ export default function Home() {
           <div className="flex justify-center">
             <Button
               size="lg"
-              disabled={isSpinning || !isAuthenticated}
+              disabled={isSpinning}
               onClick={handleSpin}
               className="relative px-10 py-6 text-base font-semibold rounded-2xl bg-gradient-to-r from-[oklch(0.75_0.15_75)] to-[oklch(0.6_0.12_25)] text-white shadow-lg shadow-[oklch(0.75_0.15_75/0.25)] hover:shadow-xl hover:shadow-[oklch(0.75_0.15_75/0.35)] transition-all duration-300 active:scale-[0.97] disabled:opacity-50 disabled:shadow-none"
             >
@@ -166,15 +162,7 @@ export default function Home() {
             </Button>
           </div>
 
-          {!isAuthenticated && (
-            <p className="text-center text-sm text-muted-foreground mt-4">
-              请先{" "}
-              <a href={getLoginUrl()} className="text-primary underline underline-offset-2 hover:text-primary/80">
-                登录
-              </a>{" "}
-              后使用抽取功能
-            </p>
-          )}
+
         </div>
       </motion.div>
 
@@ -252,22 +240,30 @@ export default function Home() {
             {selectedResult?.description && (
               <p className="text-sm text-muted-foreground mb-4">{selectedResult.description}</p>
             )}
-            <div className="space-y-3">
-              <p className="text-sm font-medium">为这家餐厅评分：</p>
-              <StarRating value={ratingScore} onChange={setRatingScore} size="lg" />
-            </div>
+            {isAuthenticated ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">为这家餐厅评分：</p>
+                <StarRating value={ratingScore} onChange={setRatingScore} size="lg" />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                登录后可以为餐厅评分，影响未来的抽取权重
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setShowResultDialog(false)}>
-              跳过
+              {isAuthenticated ? "跳过" : "关闭"}
             </Button>
-            <Button
-              onClick={handleRate}
-              disabled={ratingScore === 0 || rateMutation.isPending}
-              className="bg-gradient-to-r from-[oklch(0.75_0.15_75)] to-[oklch(0.6_0.12_25)] text-white"
-            >
-              提交评分
-            </Button>
+            {isAuthenticated && (
+              <Button
+                onClick={handleRate}
+                disabled={ratingScore === 0 || rateMutation.isPending}
+                className="bg-gradient-to-r from-[oklch(0.75_0.15_75)] to-[oklch(0.6_0.12_25)] text-white"
+              >
+                提交评分
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

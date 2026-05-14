@@ -214,13 +214,16 @@ export async function removeFromBlacklist(userId: number, restaurantId: number) 
 
 // ==================== Random Pick Logic ====================
 
-export async function getRestaurantsForPick(userId: number, useWeights: boolean) {
+export async function getRestaurantsForPick(userId: number | null, useWeights: boolean) {
   const db = await getDb();
   if (!db) return [];
 
-  // Get user's blacklist
-  const userBlacklist = await getUserBlacklist(userId);
-  const blacklistedIds = userBlacklist.map(b => b.restaurantId);
+  // Get user's blacklist (only if logged in)
+  let blacklistedIds: number[] = [];
+  if (userId !== null) {
+    const userBlacklist = await getUserBlacklist(userId);
+    blacklistedIds = userBlacklist.map(b => b.restaurantId);
+  }
 
   // Get all restaurants excluding blacklisted ones
   let availableRestaurants;

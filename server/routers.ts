@@ -116,11 +116,12 @@ export const appRouter = router({
       return { success: true };
     }),
 
-    // Random pick - returns 3 restaurants for slot machine
-    randomPick: protectedProcedure.input(z.object({
+    // Random pick - returns 3 restaurants for slot machine (public, no login required)
+    randomPick: publicProcedure.input(z.object({
       useWeights: z.boolean().default(false),
     })).mutation(async ({ ctx, input }) => {
-      const available = await getRestaurantsForPick(ctx.user.id, input.useWeights);
+      const userId = ctx.user?.id ?? null;
+      const available = await getRestaurantsForPick(userId, input.useWeights);
       
       if (available.length === 0) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "没有可用的餐厅，请先添加餐厅或调整黑名单" });

@@ -185,6 +185,18 @@ describe("restaurant.randomPick", () => {
 
     expect(result).toHaveLength(3);
   });
+
+  it("works without authentication (public)", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.restaurant.randomPick({ useWeights: false });
+
+    expect(result).toHaveLength(3);
+    result.forEach((pick) => {
+      expect(pick).toHaveProperty("id");
+      expect(pick).toHaveProperty("name");
+    });
+  });
 });
 
 describe("rating.upsert", () => {
