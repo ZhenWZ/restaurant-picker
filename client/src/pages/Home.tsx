@@ -54,9 +54,11 @@ export default function Home() {
 
     try {
       const picks = await pickMutation.mutateAsync({ useWeights });
-      // Wait for slot machine animation to finish
+      // Set results immediately so each slot can reveal independently when it stops
+      setResults(picks);
+
+      // Keep global spinning state until the longest column animation ends
       setTimeout(() => {
-        setResults(picks);
         setIsSpinning(false);
       }, 3200);
     } catch (error: any) {
