@@ -158,8 +158,7 @@ function SlotColumn({
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15, duration: 0.3 }}
-                  className="text-lg sm:text-xl font-bold text-foreground"
-                  style={{ fontFamily: "'Noto Serif SC', serif" }}
+                  className="text-lg sm:text-xl font-bold text-foreground line-clamp-1"
                 >
                   {result.name}
                 </motion.p>
