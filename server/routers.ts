@@ -1,28 +1,217 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import {
+  getAllRestaurants,
+  getRestaurantById,
+  createRestaurant,
+  createRestaurantsBatch,
+  updateRestaurant,
+  deleteRestaurant,
+  upsertRating,
+  getUserRating,
+  getRestaurantRatings,
+  getAllRatingsForUser,
+  getAverageRatingsForAll,
+  getUserBlacklist,
+  addToBlacklist,
+  removeFromBlacklist,
+  getRestaurantsForPick,
+} from "./db";
+
+// Admin-only middleware
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+  }
+  return next({ ctx });
+});
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  restaurant: router({
+    // List all restaurants with their average ratings
+    list: publicProcedure.query(async () => {
+      const allRestaurants = await getAllRestaurants();
+      const ratingsData = await getAverageRatingsForAll();
+      const ratingsMap = new Map(ratingsData.map(r => [r.restaurantId, { average: parseFloat(r.average ?? "0"), count: r.count }]));
+      
+      return allRestaurants.map(r => ({
+        ...r,
+        rating: ratingsMap.get(r.id) || { average: 0, count: 0 },
+      }));
+    }),
+
+    // Get single restaurant details
+    get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const restaurant = await getRestaurantById(input.id);
+      if (!restaurant) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      const ratingInfo = await getRestaurantRatings(input.id);
+      return { ...restaurant, rating: ratingInfo };
+    }),
+
+    // Add a single restaurant
+    create: protectedProcedure.input(z.object({
+      name: z.string().min(1, "餐厅名称不能为空").max(255),
+      description: z.string().max(500).optional(),
+      category: z.string().max(100).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      return createRestaurant({
+        name: input.name,
+        description: input.description ?? null,
+        category: input.category ?? null,
+        createdBy: ctx.user.id,
+      });
+    }),
+
+    // Batch add restaurants
+    batchCreate: protectedProcedure.input(z.object({
+      restaurants: z.array(z.object({
+        name: z.string().min(1).max(255),
+        description: z.string().max(500).optional(),
+        category: z.string().max(100).optional(),
+      })).min(1).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      const items = input.restaurants.map(r => ({
+        name: r.name,
+        description: r.description ?? null,
+        category: r.category ?? null,
+        createdBy: ctx.user.id,
+      }));
+      await createRestaurantsBatch(items);
+      return { count: items.length };
+    }),
+
+    // Update restaurant (admin only)
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().max(500).optional(),
+      category: z.string().max(100).optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const existing = await getRestaurantById(id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      await updateRestaurant(id, data);
+      return { success: true };
+    }),
+
+    // Delete restaurant (admin only)
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const existing = await getRestaurantById(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      await deleteRestaurant(input.id);
+      return { success: true };
+    }),
+
+    // Random pick - returns 3 restaurants for slot machine
+    randomPick: protectedProcedure.input(z.object({
+      useWeights: z.boolean().default(false),
+    })).mutation(async ({ ctx, input }) => {
+      const available = await getRestaurantsForPick(ctx.user.id, input.useWeights);
+      
+      if (available.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "没有可用的餐厅，请先添加餐厅或调整黑名单" });
+      }
+
+      // Weighted random selection function
+      const weightedRandom = (items: typeof available) => {
+        const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+        let random = Math.random() * totalWeight;
+        for (const item of items) {
+          random -= item.weight;
+          if (random <= 0) return item;
+        }
+        return items[items.length - 1];
+      };
+
+      // Pick 3 restaurants (can be duplicates for slot machine effect)
+      const picks = [
+        weightedRandom(available),
+        weightedRandom(available),
+        weightedRandom(available),
+      ];
+
+      return picks.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+      }));
+    }),
+  }),
+
+  rating: router({
+    // Rate a restaurant
+    upsert: protectedProcedure.input(z.object({
+      restaurantId: z.number(),
+      score: z.number().min(1).max(5),
+      comment: z.string().max(500).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const restaurant = await getRestaurantById(input.restaurantId);
+      if (!restaurant) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      await upsertRating(ctx.user.id, input.restaurantId, input.score, input.comment);
+      return { success: true };
+    }),
+
+    // Get user's rating for a restaurant
+    getUserRating: protectedProcedure.input(z.object({
+      restaurantId: z.number(),
+    })).query(async ({ ctx, input }) => {
+      return getUserRating(ctx.user.id, input.restaurantId);
+    }),
+
+    // Get all ratings for a restaurant
+    getForRestaurant: publicProcedure.input(z.object({
+      restaurantId: z.number(),
+    })).query(async ({ input }) => {
+      return getRestaurantRatings(input.restaurantId);
+    }),
+
+    // Get all user's ratings
+    myRatings: protectedProcedure.query(async ({ ctx }) => {
+      return getAllRatingsForUser(ctx.user.id);
+    }),
+  }),
+
+  blacklist: router({
+    // Get user's blacklist
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getUserBlacklist(ctx.user.id);
+    }),
+
+    // Add to blacklist
+    add: protectedProcedure.input(z.object({
+      restaurantId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const restaurant = await getRestaurantById(input.restaurantId);
+      if (!restaurant) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      await addToBlacklist(ctx.user.id, input.restaurantId);
+      return { success: true };
+    }),
+
+    // Remove from blacklist
+    remove: protectedProcedure.input(z.object({
+      restaurantId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const restaurant = await getRestaurantById(input.restaurantId);
+      if (!restaurant) throw new TRPCError({ code: "NOT_FOUND", message: "餐厅不存在" });
+      await removeFromBlacklist(ctx.user.id, input.restaurantId);
+      return { success: true };
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
