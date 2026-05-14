@@ -162,16 +162,6 @@ function SlotColumn({
                 >
                   {result.name}
                 </motion.p>
-                {result.category && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.3, duration: 0.3 }}
-                    className="text-xs text-muted-foreground mt-1.5"
-                  >
-                    {result.category}
-                  </motion.p>
-                )}
               </motion.div>
             ) : (
               <motion.div
