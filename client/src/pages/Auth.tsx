@@ -1,42 +1,53 @@
 import { useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UtensilsCrossed, Eye, EyeOff } from "lucide-react";
+import { UtensilsCrossed, Eye, EyeOff, Github, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { loginWithPassword, registerWithPassword, signInWithOAuth } from "@/lib/api";
+import { oauthProviders } from "@/lib/supabase";
+import type { Provider } from "@supabase/supabase-js";
+
+const providerLabel: Partial<Record<Provider, string>> = {
+  github: "GitHub",
+  google: "Google",
+};
 
 export default function Auth() {
   const [, navigate] = useLocation();
+  const { refresh } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const utils = trpc.useUtils();
-
-  const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: () => {
+  const loginMutation = useMutation({
+    mutationFn: loginWithPassword,
+    onSuccess: async () => {
       toast.success("登录成功！");
-      utils.auth.me.invalidate();
+      await refresh();
       navigate("/");
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       toast.error(err.message);
     },
   });
 
-  const registerMutation = trpc.auth.register.useMutation({
-    onSuccess: () => {
+  const registerMutation = useMutation({
+    mutationFn: registerWithPassword,
+    onSuccess: async () => {
       toast.success("注册成功！");
-      utils.auth.me.invalidate();
+      await refresh();
       navigate("/");
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       toast.error(err.message);
     },
   });
@@ -50,11 +61,18 @@ export default function Auth() {
         toast.error("请输入昵称");
         return;
       }
-      registerMutation.mutate({ username, password, name: name.trim() });
+      registerMutation.mutate({ username, email, password, name: name.trim() });
     }
   };
 
   const isPending = loginMutation.isPending || registerMutation.isPending;
+  const handleOAuth = async (provider: Provider) => {
+    try {
+      await signInWithOAuth(provider);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "第三方登录启动失败");
+    }
+  };
 
   return (
     <div className="min-h-[calc(100vh-10rem)] flex items-center justify-center px-4">
@@ -106,6 +124,20 @@ export default function Auth() {
                   autoComplete="username"
                 />
               </div>
+              {mode === "register" && (
+                <div className="space-y-2">
+                  <Label htmlFor="email">邮箱</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="password">密码</Label>
                 <div className="relative">
@@ -138,12 +170,40 @@ export default function Auth() {
                 {isPending ? "请稍候..." : mode === "login" ? "登录" : "注册"}
               </Button>
             </form>
+            {oauthProviders.length > 0 && (
+              <div className="mt-6 space-y-3">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">或使用第三方账号</span>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  {oauthProviders.map(provider => (
+                    <Button
+                      key={provider}
+                      type="button"
+                      variant="outline"
+                      className="w-full gap-2"
+                      onClick={() => handleOAuth(provider)}
+                      disabled={isPending}
+                    >
+                      {provider === "github" ? <Github className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+                      {providerLabel[provider] ?? provider}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-6 text-center">
               <button
                 type="button"
                 onClick={() => {
                   setMode(mode === "login" ? "register" : "login");
                   setUsername("");
+                  setEmail("");
                   setPassword("");
                   setName("");
                 }}

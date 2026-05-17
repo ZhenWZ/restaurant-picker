@@ -26,7 +26,7 @@
 - [x] 优雅精致的视觉设计风格
 
 ## 测试
-- [x] 后端 API 单元测试
+- [x] 前端业务工具单元测试
 
 ## 调整需求
 - [x] 抽取餐厅不需要登录（改为 publicProcedure）
@@ -38,6 +38,13 @@
 - [x] 老虎机滚动时使用 emoji 图标展示
 
 ## 新增需求 - 账号系统 & 动画优化
-- [x] 实现自维护账号密码注册/登录系统（替换 OAuth）
+- [x] 实现 Supabase Auth 用户名密码注册/登录
+- [x] 实现 Supabase OAuth 第三方登录入口
 - [x] 优化老虎机动画流畅度，移除"等待抽取"文字
 - [x] 扩展老虎机高亮边框，包住上方 emoji 和下方餐厅名
+
+## 新增需求 - GitHub Pages + Supabase 部署
+- [x] 移除 Node/Express/tRPC/Drizzle 运行面
+- [x] 使用 Supabase Postgres migrations + RLS 管理数据
+- [x] 使用 Supabase Edge Functions 承载注册、用户名登录、OAuth profile sync 和随机抽取
+- [x] 使用 GitHub Actions 部署 Supabase migrations/functions 与 GitHub Pages 静态站点

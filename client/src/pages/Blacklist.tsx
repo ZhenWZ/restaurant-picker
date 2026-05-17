@@ -1,26 +1,35 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { trpc } from "@/lib/trpc";
 import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Ban, Undo2, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 import { getLoginUrl } from "@/const";
+import { listMyBlacklist, listRestaurants, removeFromBlacklist } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 
 export default function Blacklist() {
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
 
-  const { data: restaurants } = trpc.restaurant.list.useQuery();
-  const { data: myBlacklist, isLoading } = trpc.blacklist.list.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: restaurants } = useQuery({
+    queryKey: queryKeys.restaurants,
+    queryFn: listRestaurants,
+  });
+  const { data: myBlacklist, isLoading } = useQuery({
+    queryKey: queryKeys.myBlacklist,
+    queryFn: listMyBlacklist,
+    enabled: isAuthenticated,
+  });
 
-  const utils = trpc.useUtils();
-
-  const removeMutation = trpc.blacklist.remove.useMutation({
+  const removeMutation = useMutation({
+    mutationFn: ({ restaurantId }: { restaurantId: number }) => removeFromBlacklist(restaurantId),
     onSuccess: () => {
-      utils.blacklist.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.myBlacklist });
       toast.success("已从黑名单移除");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const blacklistedRestaurants = useMemo(() => {

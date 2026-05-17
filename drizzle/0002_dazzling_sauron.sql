@@ -1,1 +1,0 @@
-ALTER TABLE `restaurants` ADD `emoji` varchar(32);

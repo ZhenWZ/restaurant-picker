@@ -1,0 +1,2 @@
+-- Default restaurants are inserted by the initial migration so hosted deploys
+-- get seed data through `supabase db push` as well as local resets.

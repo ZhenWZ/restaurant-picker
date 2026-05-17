@@ -1,0 +1,24 @@
+project_id = "restaurant-picker"
+
+[api]
+enabled = true
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:5173/"]
+
+[functions.auth-register]
+verify_jwt = false
+
+[functions.auth-password-login]
+verify_jwt = false
+
+[functions.profile-sync]
+verify_jwt = true
+
+[functions.random-pick]
+verify_jwt = false

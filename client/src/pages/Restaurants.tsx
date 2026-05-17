@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { trpc } from "@/lib/trpc";
 import StarRating from "@/components/StarRating";
 import { useState, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Plus, Upload, Pencil, Trash2, Search, Store, Ban } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +27,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getLoginUrl } from "@/const";
+import {
+  addToBlacklist,
+  createRestaurant,
+  createRestaurantsBatch,
+  deleteRestaurant,
+  listMyBlacklist,
+  listMyRatings,
+  listRestaurants,
+  removeFromBlacklist,
+  updateRestaurant,
+  upsertRating,
+} from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import type { RestaurantWithRating } from "@shared/types";
 
 export default function Restaurants() {
   const { user, isAuthenticated } = useAuth();
@@ -37,7 +51,7 @@ export default function Restaurants() {
   const [showBatchDialog, setShowBatchDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [editingRestaurant, setEditingRestaurant] = useState<any>(null);
+  const [editingRestaurant, setEditingRestaurant] = useState<RestaurantWithRating | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Form state
@@ -47,14 +61,26 @@ export default function Restaurants() {
   const [newEmoji, setNewEmoji] = useState("");
   const [batchText, setBatchText] = useState("");
 
-  const utils = trpc.useUtils();
-  const { data: restaurants, isLoading } = trpc.restaurant.list.useQuery();
-  const { data: myRatings } = trpc.rating.myRatings.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: myBlacklist } = trpc.blacklist.list.useQuery(undefined, { enabled: isAuthenticated });
+  const queryClient = useQueryClient();
+  const { data: restaurants, isLoading } = useQuery({
+    queryKey: queryKeys.restaurants,
+    queryFn: listRestaurants,
+  });
+  const { data: myRatings } = useQuery({
+    queryKey: queryKeys.myRatings,
+    queryFn: listMyRatings,
+    enabled: isAuthenticated,
+  });
+  const { data: myBlacklist } = useQuery({
+    queryKey: queryKeys.myBlacklist,
+    queryFn: listMyBlacklist,
+    enabled: isAuthenticated,
+  });
 
-  const createMutation = trpc.restaurant.create.useMutation({
+  const createMutation = useMutation({
+    mutationFn: createRestaurant,
     onSuccess: () => {
-      utils.restaurant.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       toast.success("餐厅添加成功！");
       setShowAddDialog(false);
       setNewName("");
@@ -62,61 +88,70 @@ export default function Restaurants() {
       setNewCategory("");
       setNewEmoji("");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const batchCreateMutation = trpc.restaurant.batchCreate.useMutation({
+  const batchCreateMutation = useMutation({
+    mutationFn: ({ restaurants: items }: { restaurants: Array<{ name: string; description?: string; category?: string; emoji?: string }> }) =>
+      createRestaurantsBatch(items),
     onSuccess: (data) => {
-      utils.restaurant.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       toast.success(`成功添加 ${data.count} 家餐厅！`);
       setShowBatchDialog(false);
       setBatchText("");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const updateMutation = trpc.restaurant.update.useMutation({
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name?: string; description?: string; category?: string; emoji?: string }) =>
+      updateRestaurant(id, data),
     onSuccess: () => {
-      utils.restaurant.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       toast.success("餐厅信息已更新");
       setShowEditDialog(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const deleteMutation = trpc.restaurant.delete.useMutation({
+  const deleteMutation = useMutation({
+    mutationFn: ({ id }: { id: number }) => deleteRestaurant(id),
     onSuccess: () => {
-      utils.restaurant.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       toast.success("餐厅已删除");
       setShowDeleteDialog(false);
       setDeletingId(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const rateMutation = trpc.rating.upsert.useMutation({
+  const rateMutation = useMutation({
+    mutationFn: ({ restaurantId, score }: { restaurantId: number; score: number }) =>
+      upsertRating(restaurantId, score),
     onSuccess: () => {
-      utils.rating.myRatings.invalidate();
-      utils.restaurant.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.myRatings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       toast.success("评分已更新");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const blacklistAddMutation = trpc.blacklist.add.useMutation({
+  const blacklistAddMutation = useMutation({
+    mutationFn: ({ restaurantId }: { restaurantId: number }) => addToBlacklist(restaurantId),
     onSuccess: () => {
-      utils.blacklist.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.myBlacklist });
       toast.success("已加入黑名单");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const blacklistRemoveMutation = trpc.blacklist.remove.useMutation({
+  const blacklistRemoveMutation = useMutation({
+    mutationFn: ({ restaurantId }: { restaurantId: number }) => removeFromBlacklist(restaurantId),
     onSuccess: () => {
-      utils.blacklist.list.invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.myBlacklist });
       toast.success("已从黑名单移除");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const blacklistedIds = useMemo(() => {
@@ -170,7 +205,7 @@ export default function Restaurants() {
     batchCreateMutation.mutate({ restaurants: items });
   };
 
-  const handleEdit = (restaurant: any) => {
+  const handleEdit = (restaurant: RestaurantWithRating) => {
     setEditingRestaurant({ ...restaurant });
     setShowEditDialog(true);
   };

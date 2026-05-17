@@ -2,14 +2,16 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { getLoginUrl } from "@/const";
-import { trpc } from "@/lib/trpc";
 import SlotMachine from "@/components/SlotMachine";
 import StarRating from "@/components/StarRating";
 import { useState, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dices, Sparkles, Trophy, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { listRestaurants, randomPick, upsertRating } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import type { PickResult } from "@shared/types";
 import {
   Dialog,
   DialogContent,
@@ -17,16 +19,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-interface PickResult {
-  id: number;
-  name: string;
-  description: string | null;
-  category: string | null;
-  emoji?: string | null;
-}
-
 export default function Home() {
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const [useWeights, setUseWeights] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [results, setResults] = useState<PickResult[] | null>(null);
@@ -34,9 +29,21 @@ export default function Home() {
   const [selectedResult, setSelectedResult] = useState<PickResult | null>(null);
   const [ratingScore, setRatingScore] = useState(0);
 
-  const { data: restaurantList } = trpc.restaurant.list.useQuery();
-  const pickMutation = trpc.restaurant.randomPick.useMutation();
-  const rateMutation = trpc.rating.upsert.useMutation();
+  const { data: restaurantList } = useQuery({
+    queryKey: queryKeys.restaurants,
+    queryFn: listRestaurants,
+  });
+  const pickMutation = useMutation({
+    mutationFn: ({ useWeights: weighted }: { useWeights: boolean }) => randomPick(weighted),
+  });
+  const rateMutation = useMutation({
+    mutationFn: ({ restaurantId, score }: { restaurantId: number; score: number }) =>
+      upsertRating(restaurantId, score),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
+      queryClient.invalidateQueries({ queryKey: queryKeys.myRatings });
+    },
+  });
 
   const allRestaurants = useMemo(() => {
     return (restaurantList || []).map(r => ({ id: r.id, name: r.name, emoji: r.emoji }));
@@ -76,10 +83,7 @@ export default function Home() {
   const handleRate = async () => {
     if (!selectedResult || ratingScore === 0) return;
     try {
-      await rateMutation.mutateAsync({
-        restaurantId: selectedResult.id,
-        score: ratingScore,
-      });
+      await rateMutation.mutateAsync({ restaurantId: selectedResult.id, score: ratingScore });
       toast.success("评分成功！");
       setShowResultDialog(false);
     } catch {
