@@ -56,18 +56,33 @@ jobs:
         with:
           version: latest
 
+      - name: Resolve Supabase project ref
+        run: |
+          value="${SUPABASE_PROJECT_ID}"
+          if [[ "$value" =~ ^[a-z0-9]{20}$ ]]; then
+            ref="$value"
+          elif [[ "$value" =~ ^https?://([a-z0-9]{20})\.supabase\.co/?$ ]]; then
+            ref="${BASH_REMATCH[1]}"
+          elif [[ "$value" =~ /project/([a-z0-9]{20})(/|$) ]]; then
+            ref="${BASH_REMATCH[1]}"
+          else
+            echo "::error::SUPABASE_PROJECT_ID must be the 20-character Supabase project ref, for example abcdefghijklmnopqrst. You can find it in Project Settings -> General -> Reference ID, or in https://supabase.com/dashboard/project/<ref>."
+            exit 1
+          fi
+          echo "SUPABASE_PROJECT_REF=$ref" >> "$GITHUB_ENV"
+
       - name: Link Supabase project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Push database migrations
         run: supabase db push
 
       - name: Deploy Edge Functions
         run: |
-          supabase functions deploy auth-register --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy auth-password-login --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy profile-sync --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy random-pick --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy auth-register --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy auth-password-login --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy profile-sync --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy random-pick --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Build static app
         run: pnpm build
