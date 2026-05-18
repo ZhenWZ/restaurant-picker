@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const slotNameClassName = "line-clamp-1 text-lg sm:text-xl font-bold text-foreground";
+
 interface SlotResult {
   id: number;
   name: string;
@@ -29,8 +31,7 @@ function SlotColumn({
   const [displayItems, setDisplayItems] = useState<{ name: string; emoji?: string | null }[]>([]);
   const [stopped, setStopped] = useState(true);
   const [showResult, setShowResult] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spinSessionRef = useRef(0);
   const tickRef = useRef(0);
@@ -43,84 +44,83 @@ function SlotColumn({
   }, [allRestaurants]);
 
   useEffect(() => {
-    if (isSpinning) {
-      spinSessionRef.current += 1;
-      const sessionId = spinSessionRef.current;
+    if (!isSpinning) return;
 
-      setStopped(false);
-      setShowResult(false);
-      tickRef.current = 0;
+    spinSessionRef.current += 1;
+    const sessionId = spinSessionRef.current;
 
+    setStopped(false);
+    setShowResult(false);
+    tickRef.current = 0;
+
+    if (revealTimeoutRef.current) {
+      clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+
+    // Generate initial display items (3 visible in the column)
+    setDisplayItems([getRandomItem(), getRandomItem(), getRandomItem()]);
+
+    // Start spinning - gradually slow down near the end
+    const startTime = Date.now();
+    const spinDuration = delay;
+
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / spinDuration, 1);
+
+      if (progress >= 1) {
+        setStopped(true);
+        // Small delay before showing final result for dramatic effect
+        revealTimeoutRef.current = setTimeout(() => {
+          if (spinSessionRef.current === sessionId) {
+            setShowResult(true);
+          }
+        }, 150);
+        return;
+      }
+
+      // Easing: speed decreases as progress increases
+      // Interval goes from 70ms to 200ms
+      const baseInterval = 70;
+      const maxInterval = 200;
+      const currentInterval = baseInterval + (maxInterval - baseInterval) * Math.pow(progress, 2);
+
+      setDisplayItems(prev => {
+        const newItems = [...prev];
+        newItems.shift();
+        newItems.push(getRandomItem());
+        return newItems;
+      });
+
+      tickRef.current++;
+      spinTimeoutRef.current = setTimeout(tick, currentInterval);
+    };
+
+    spinTimeoutRef.current = setTimeout(tick, 70);
+
+    return () => {
+      if (spinTimeoutRef.current) {
+        clearTimeout(spinTimeoutRef.current);
+        spinTimeoutRef.current = null;
+      }
       if (revealTimeoutRef.current) {
         clearTimeout(revealTimeoutRef.current);
         revealTimeoutRef.current = null;
       }
-
-      // Generate initial display items (3 visible in the column)
-      setDisplayItems([getRandomItem(), getRandomItem(), getRandomItem()]);
-
-      // Start spinning - gradually slow down near the end
-      const startTime = Date.now();
-      const spinDuration = delay;
-
-      const tick = () => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / spinDuration, 1);
-
-        if (progress >= 1) {
-          // Stop
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          setStopped(true);
-          // Small delay before showing final result for dramatic effect
-          revealTimeoutRef.current = setTimeout(() => {
-            if (spinSessionRef.current === sessionId) {
-              setShowResult(true);
-            }
-          }, 150);
-          return;
-        }
-
-        // Easing: speed decreases as progress increases
-        // Interval goes from 70ms to 200ms
-        const baseInterval = 70;
-        const maxInterval = 200;
-        const currentInterval = baseInterval + (maxInterval - baseInterval) * Math.pow(progress, 2);
-
-        setDisplayItems(prev => {
-          const newItems = [...prev];
-          newItems.shift();
-          newItems.push(getRandomItem());
-          return newItems;
-        });
-
-        tickRef.current++;
-
-        // Schedule next tick with dynamic interval
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        intervalRef.current = setTimeout(tick, currentInterval) as unknown as ReturnType<typeof setInterval>;
-      };
-
-      intervalRef.current = setTimeout(tick, 70) as unknown as ReturnType<typeof setInterval>;
-    } else {
-      // Reset when not spinning and no result
-      if (!result) {
-        setShowResult(false);
-        setStopped(true);
-      }
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current as unknown as ReturnType<typeof setTimeout>);
-        clearInterval(intervalRef.current);
-      }
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
     };
-  }, [isSpinning, delay, getRandomItem, result]);
+  }, [isSpinning, delay, getRandomItem]);
+
+  useEffect(() => {
+    if (isSpinning) return;
+
+    setStopped(true);
+    setShowResult(Boolean(result));
+  }, [isSpinning, result]);
 
   // Current display item (middle of the 3)
   const currentItem = displayItems.length > 1 ? displayItems[1] : displayItems[0];
+  const visibleResult = stopped && showResult ? result : null;
 
   return (
     <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card to-secondary/20 shadow-inner">
@@ -137,25 +137,9 @@ function SlotColumn({
         {/* Content */}
         <div className="relative z-5 flex flex-col items-center justify-center h-full w-full px-3">
           <AnimatePresence mode="wait">
-            {!stopped && currentItem ? (
+            {visibleResult ? (
               <motion.div
-                key={`spin-${tickRef.current}`}
-                initial={{ y: -40, opacity: 0, scale: 0.9 }}
-                animate={{ y: 0, opacity: 1, scale: 1 }}
-                exit={{ y: 40, opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.08, ease: "easeOut" }}
-                className="text-center"
-              >
-                <span className="text-4xl sm:text-5xl block mb-2">
-                  {currentItem.emoji || "🍽️"}
-                </span>
-                <span className="text-sm sm:text-base font-medium text-foreground/70 line-clamp-1">
-                  {currentItem.name}
-                </span>
-              </motion.div>
-            ) : showResult && result ? (
-              <motion.div
-                key={`result-${result.id}`}
+                key={`result-${visibleResult.id}`}
                 initial={{ scale: 0.85, opacity: 0, y: 10 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
@@ -167,16 +151,32 @@ function SlotColumn({
                   transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1], delay: 0.05 }}
                   className="text-5xl sm:text-6xl block mb-3"
                 >
-                  {result.emoji || "🍽️"}
+                  {visibleResult.emoji || "🍽️"}
                 </motion.span>
                 <motion.p
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15, duration: 0.3 }}
-                  className="text-lg sm:text-xl font-bold text-foreground line-clamp-1"
+                  className={slotNameClassName}
                 >
-                  {result.name}
+                  {visibleResult.name}
                 </motion.p>
+              </motion.div>
+            ) : !stopped && currentItem ? (
+              <motion.div
+                key={`spin-${tickRef.current}`}
+                initial={{ y: -40, opacity: 0, scale: 0.9 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 40, opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.08, ease: "easeOut" }}
+                className="text-center"
+              >
+                <span className="text-4xl sm:text-5xl block mb-2">
+                  {currentItem.emoji || "🍽️"}
+                </span>
+                <span className={slotNameClassName}>
+                  {currentItem.name}
+                </span>
               </motion.div>
             ) : (
               <motion.div
