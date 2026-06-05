@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-
-const slotNameClassName = "line-clamp-1 text-lg sm:text-xl font-bold text-foreground";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 interface SlotResult {
   id: number;
@@ -17,6 +15,20 @@ interface SlotMachineProps {
   allRestaurants: { id: number; name: string; emoji?: string | null }[];
 }
 
+type SlotDisplayItem = {
+  id?: number;
+  name: string;
+  emoji?: string | null;
+};
+
+const SLOT_COLUMN_DELAYS = [1500, 2300, 3200] as const;
+const SLOT_REVEAL_DELAY_MS = 180;
+const SLOT_BASE_TICK_MS = 70;
+const SLOT_MAX_TICK_MS = 220;
+
+export const SLOT_MACHINE_COMPLETE_DELAY_MS =
+  Math.max(...SLOT_COLUMN_DELAYS) + SLOT_REVEAL_DELAY_MS + 120;
+
 function SlotColumn({
   result,
   isSpinning,
@@ -28,187 +40,247 @@ function SlotColumn({
   delay: number;
   allRestaurants: { id: number; name: string; emoji?: string | null }[];
 }) {
-  const [displayItems, setDisplayItems] = useState<{ name: string; emoji?: string | null }[]>([]);
+  const shouldReduceMotion = useReducedMotion();
+  const [displayItem, setDisplayItem] = useState<SlotDisplayItem | null>(null);
   const [stopped, setStopped] = useState(true);
   const [showResult, setShowResult] = useState(false);
-  const spinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultRef = useRef<SlotResult | null>(result);
   const spinSessionRef = useRef(0);
   const tickRef = useRef(0);
 
-  const getRandomItem = useCallback(() => {
-    const items = allRestaurants.length > 0
-      ? allRestaurants
-      : [{ id: 0, name: "?", emoji: "🎰" }];
-    return items[Math.floor(Math.random() * items.length)];
-  }, [allRestaurants]);
-
-  useEffect(() => {
-    if (!isSpinning) return;
-
-    spinSessionRef.current += 1;
-    const sessionId = spinSessionRef.current;
-
-    setStopped(false);
-    setShowResult(false);
-    tickRef.current = 0;
-
+  const clearTimers = useCallback(() => {
+    if (tickTimeoutRef.current) {
+      clearTimeout(tickTimeoutRef.current);
+      tickTimeoutRef.current = null;
+    }
     if (revealTimeoutRef.current) {
       clearTimeout(revealTimeoutRef.current);
       revealTimeoutRef.current = null;
     }
+  }, []);
 
-    // Generate initial display items (3 visible in the column)
-    setDisplayItems([getRandomItem(), getRandomItem(), getRandomItem()]);
+  const getRandomItem = useCallback((): SlotDisplayItem => {
+    const items =
+      allRestaurants.length > 0
+        ? allRestaurants
+        : [{ id: 0, name: "?", emoji: "🎰" }];
+    return items[Math.floor(Math.random() * items.length)];
+  }, [allRestaurants]);
 
-    // Start spinning - gradually slow down near the end
+  useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
+
+  useEffect(() => {
+    spinSessionRef.current += 1;
+    const sessionId = spinSessionRef.current;
+    clearTimers();
+
+    if (!isSpinning) {
+      setStopped(true);
+      if (!resultRef.current) {
+        setDisplayItem(null);
+        setShowResult(false);
+      }
+      return clearTimers;
+    }
+
+    setStopped(false);
+    setShowResult(false);
+    tickRef.current = 0;
+    setDisplayItem(getRandomItem());
+
     const startTime = Date.now();
-    const spinDuration = delay;
+    const spinDuration = shouldReduceMotion ? Math.min(delay, 420) : delay;
 
     const tick = () => {
+      if (spinSessionRef.current !== sessionId) return;
+
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / spinDuration, 1);
+      const finalResult = resultRef.current;
 
-      if (progress >= 1) {
+      if (progress >= 1 && finalResult) {
+        tickTimeoutRef.current = null;
+        setDisplayItem(finalResult);
         setStopped(true);
-        // Small delay before showing final result for dramatic effect
-        revealTimeoutRef.current = setTimeout(() => {
-          if (spinSessionRef.current === sessionId) {
-            setShowResult(true);
-          }
-        }, 150);
+        revealTimeoutRef.current = setTimeout(
+          () => {
+            if (spinSessionRef.current === sessionId && resultRef.current) {
+              setShowResult(true);
+            }
+          },
+          shouldReduceMotion ? 0 : SLOT_REVEAL_DELAY_MS
+        );
         return;
       }
 
-      // Easing: speed decreases as progress increases
-      // Interval goes from 70ms to 200ms
-      const baseInterval = 70;
-      const maxInterval = 200;
-      const currentInterval = baseInterval + (maxInterval - baseInterval) * Math.pow(progress, 2);
+      const currentInterval = shouldReduceMotion
+        ? SLOT_REVEAL_DELAY_MS
+        : SLOT_BASE_TICK_MS +
+          (SLOT_MAX_TICK_MS - SLOT_BASE_TICK_MS) * Math.pow(progress, 2);
 
-      setDisplayItems(prev => {
-        const newItems = [...prev];
-        newItems.shift();
-        newItems.push(getRandomItem());
-        return newItems;
-      });
-
-      tickRef.current++;
-      spinTimeoutRef.current = setTimeout(tick, currentInterval);
+      tickRef.current += 1;
+      setDisplayItem(getRandomItem());
+      tickTimeoutRef.current = setTimeout(tick, currentInterval);
     };
 
-    spinTimeoutRef.current = setTimeout(tick, 70);
+    tickTimeoutRef.current = setTimeout(
+      tick,
+      shouldReduceMotion ? 120 : SLOT_BASE_TICK_MS
+    );
 
-    return () => {
-      if (spinTimeoutRef.current) {
-        clearTimeout(spinTimeoutRef.current);
-        spinTimeoutRef.current = null;
-      }
-      if (revealTimeoutRef.current) {
-        clearTimeout(revealTimeoutRef.current);
-        revealTimeoutRef.current = null;
-      }
-    };
-  }, [isSpinning, delay, getRandomItem]);
+    return clearTimers;
+  }, [clearTimers, delay, getRandomItem, isSpinning, shouldReduceMotion]);
 
-  useEffect(() => {
-    if (isSpinning) return;
-
-    setStopped(true);
-    setShowResult(Boolean(result));
-  }, [isSpinning, result]);
-
-  // Current display item (middle of the 3)
-  const currentItem = displayItems.length > 1 ? displayItems[1] : displayItems[0];
-  const visibleResult = stopped && showResult ? result : null;
+  const activeItem = showResult && result ? result : displayItem;
+  const rollingKey =
+    stopped && activeItem
+      ? `hold-${activeItem.id ?? activeItem.name}`
+      : `spin-${tickRef.current}`;
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card to-secondary/20 shadow-inner">
-      {/* Slot window with expanded height to include emoji + name */}
-      <div className="relative h-48 sm:h-56 flex flex-col items-center justify-center">
-        {/* Top gradient overlay */}
-        <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-card to-transparent z-10 pointer-events-none" />
-        {/* Bottom gradient overlay */}
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent z-10 pointer-events-none" />
+    <div className="relative h-36 w-full overflow-hidden rounded-xl border border-[oklch(0.69_0.16_155/0.55)] bg-[oklch(0.93_0.025_145)] shadow-[inset_0_0_0_1px_oklch(1_0_0/0.78),inset_0_0_26px_oklch(0.61_0.18_158/0.3),0_0_22px_oklch(0.6_0.16_158/0.25)] sm:h-52 sm:rounded-2xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-white/90 via-white/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-12 bg-gradient-to-t from-[oklch(0.82_0.04_150/0.75)] via-white/25 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-1 top-2 bottom-2 z-20 rounded-lg border border-white/75 shadow-[inset_0_0_18px_oklch(0.35_0.1_160/0.18)] sm:inset-x-2 sm:top-3 sm:bottom-3 sm:rounded-xl" />
+      <div className="pointer-events-none absolute inset-y-4 left-0 w-px bg-white/80" />
+      <div className="pointer-events-none absolute inset-y-4 right-0 w-px bg-[oklch(0.35_0.08_160/0.24)]" />
 
-        {/* Center highlight frame - expanded to cover emoji + name area */}
-        <div className="absolute inset-x-2 top-4 bottom-4 rounded-xl border-2 border-[oklch(0.75_0.15_75/0.4)] bg-[oklch(0.75_0.15_75/0.03)] z-20 pointer-events-none" />
-
-        {/* Content */}
-        <div className="relative z-5 flex flex-col items-center justify-center h-full w-full px-3">
-          <AnimatePresence mode="wait">
-            {visibleResult ? (
-              <motion.div
-                key={`result-${visibleResult.id}`}
-                initial={{ scale: 0.85, opacity: 0, y: 10 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-                className="text-center"
+      <div className="relative z-30 flex h-full w-full flex-col items-center justify-center px-1.5 py-4 text-center sm:px-3">
+        <AnimatePresence mode="wait">
+          {showResult && result ? (
+            <motion.div
+              key={`result-${result.id}`}
+              initial={
+                shouldReduceMotion
+                  ? { opacity: 0 }
+                  : { scale: 0.86, opacity: 0, y: 10 }
+              }
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{
+                duration: shouldReduceMotion ? 0.12 : 0.48,
+                ease: [0.23, 1, 0.32, 1],
+              }}
+              className="flex min-w-0 flex-col items-center"
+            >
+              <motion.span
+                initial={
+                  shouldReduceMotion
+                    ? { opacity: 0 }
+                    : { scale: 0.7, rotate: -7 }
+                }
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                transition={{
+                  duration: shouldReduceMotion ? 0.12 : 0.5,
+                  ease: [0.23, 1, 0.32, 1],
+                }}
+                className="mb-2 block text-[2rem] leading-none drop-shadow-[0_4px_10px_oklch(0.25_0.06_150/0.18)] sm:mb-3 sm:text-5xl"
               >
-                <motion.span
-                  initial={{ scale: 0.6, rotate: -10 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1], delay: 0.05 }}
-                  className="text-5xl sm:text-6xl block mb-3"
-                >
-                  {visibleResult.emoji || "🍽️"}
-                </motion.span>
-                <motion.p
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15, duration: 0.3 }}
-                  className={slotNameClassName}
-                >
-                  {visibleResult.name}
-                </motion.p>
-              </motion.div>
-            ) : !stopped && currentItem ? (
-              <motion.div
-                key={`spin-${tickRef.current}`}
-                initial={{ y: -40, opacity: 0, scale: 0.9 }}
-                animate={{ y: 0, opacity: 1, scale: 1 }}
-                exit={{ y: 40, opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.08, ease: "easeOut" }}
-                className="text-center"
+                {result.emoji || "🍽️"}
+              </motion.span>
+              <motion.p
+                initial={
+                  shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 5 }
+                }
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  delay: shouldReduceMotion ? 0 : 0.08,
+                  duration: 0.22,
+                }}
+                className="line-clamp-2 max-w-full text-[0.72rem] font-extrabold leading-tight text-[oklch(0.2_0.045_155)] [overflow-wrap:anywhere] sm:text-base"
               >
-                <span className="text-4xl sm:text-5xl block mb-2">
-                  {currentItem.emoji || "🍽️"}
-                </span>
-                <span className={slotNameClassName}>
-                  {currentItem.name}
-                </span>
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center"
-              >
-                <span className="text-4xl sm:text-5xl block mb-2 opacity-30">🎰</span>
-                <span className="text-sm text-muted-foreground/40 font-medium">· · ·</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                {result.name}
+              </motion.p>
+            </motion.div>
+          ) : activeItem ? (
+            <motion.div
+              key={rollingKey}
+              initial={
+                shouldReduceMotion
+                  ? { opacity: 0 }
+                  : { y: -34, opacity: 0, scale: 0.9 }
+              }
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={
+                shouldReduceMotion
+                  ? { opacity: 0 }
+                  : { y: 34, opacity: 0, scale: 0.92 }
+              }
+              transition={{
+                duration: shouldReduceMotion ? 0.08 : 0.09,
+                ease: "easeOut",
+              }}
+              className="flex min-w-0 flex-col items-center"
+            >
+              <span className="mb-2 block text-[1.9rem] leading-none opacity-95 drop-shadow-[0_3px_8px_oklch(0.25_0.06_150/0.14)] sm:text-[2.75rem]">
+                {activeItem.emoji || "🍽️"}
+              </span>
+              <span className="line-clamp-2 max-w-full text-[0.66rem] font-semibold leading-tight text-[oklch(0.26_0.045_155/0.78)] [overflow-wrap:anywhere] sm:text-sm">
+                {activeItem.name}
+              </span>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="idle"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center"
+            >
+              <span className="mb-2 block text-[1.9rem] leading-none opacity-30 sm:text-[2.75rem]">
+                🎰
+              </span>
+              <span className="text-xs font-semibold tracking-[0.18em] text-[oklch(0.3_0.04_155/0.35)]">
+                · · ·
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
 }
 
-export default function SlotMachine({ results, isSpinning, allRestaurants }: SlotMachineProps) {
-  const delays = [1500, 2300, 3200]; // Staggered stop times
-
+export default function SlotMachine({
+  results,
+  isSpinning,
+  allRestaurants,
+}: SlotMachineProps) {
   return (
-    <div className="grid grid-cols-3 gap-3 sm:gap-5">
-      {[0, 1, 2].map((index) => (
-        <SlotColumn
-          key={index}
-          result={results ? results[index] : null}
-          isSpinning={isSpinning}
-          delay={delays[index]}
-          allRestaurants={allRestaurants}
-        />
-      ))}
+    <div
+      data-testid="slot-machine"
+      className="relative overflow-visible rounded-[1.35rem] bg-[oklch(0.2_0.075_165)] p-2.5 shadow-[0_18px_34px_oklch(0.16_0.05_150/0.25),inset_0_1px_0_oklch(1_0_0/0.18),inset_0_-12px_26px_oklch(0.08_0.045_165/0.32)] sm:rounded-[1.6rem] sm:p-4"
+      aria-live="polite"
+    >
+      <div className="pointer-events-none absolute -inset-x-2 -top-4 h-10 rounded-full bg-[oklch(0.72_0.18_155/0.18)] blur-xl" />
+      <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(135deg,oklch(1_0_0/0.16),transparent_32%,oklch(0.04_0.02_160/0.22)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-4 top-2 h-px bg-white/20 sm:inset-x-6" />
+      <div className="pointer-events-none absolute inset-x-5 bottom-2 h-px bg-black/25 sm:inset-x-8" />
+      <div className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 grid-cols-2 gap-1 sm:grid">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <span
+            key={index}
+            className="h-1 w-1 rounded-full bg-[oklch(0.82_0.04_155/0.35)] shadow-[0_0_5px_oklch(0.72_0.18_155/0.28)]"
+          />
+        ))}
+      </div>
+
+      <div className="relative grid grid-cols-3 gap-2 sm:gap-4">
+        {[0, 1, 2].map(index => (
+          <SlotColumn
+            key={index}
+            result={results ? results[index] : null}
+            isSpinning={isSpinning}
+            delay={SLOT_COLUMN_DELAYS[index]}
+            allRestaurants={allRestaurants}
+          />
+        ))}
+      </div>
+
+      <div className="pointer-events-none absolute -bottom-2 left-9 h-3 w-8 rounded-b-md bg-[oklch(0.16_0.055_165)] shadow-md sm:left-14" />
+      <div className="pointer-events-none absolute -bottom-2 right-9 h-3 w-8 rounded-b-md bg-[oklch(0.16_0.055_165)] shadow-md sm:right-14" />
     </div>
   );
 }
