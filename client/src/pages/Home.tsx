@@ -2,9 +2,11 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import SlotMachine from "@/components/SlotMachine";
+import SlotMachine, {
+  SLOT_MACHINE_COMPLETE_DELAY_MS,
+} from "@/components/SlotMachine";
 import StarRating from "@/components/StarRating";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dices, Sparkles, Trophy, ArrowRight } from "lucide-react";
@@ -28,17 +30,34 @@ export default function Home() {
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [selectedResult, setSelectedResult] = useState<PickResult | null>(null);
   const [ratingScore, setRatingScore] = useState(0);
+  const spinFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const spinStartedAtRef = useRef(0);
+
+  const clearSpinFinishTimeout = () => {
+    if (spinFinishTimeoutRef.current) {
+      clearTimeout(spinFinishTimeoutRef.current);
+      spinFinishTimeoutRef.current = null;
+    }
+  };
 
   const { data: restaurantList } = useQuery({
     queryKey: queryKeys.restaurants,
     queryFn: listRestaurants,
   });
   const pickMutation = useMutation({
-    mutationFn: ({ useWeights: weighted }: { useWeights: boolean }) => randomPick(weighted),
+    mutationFn: ({ useWeights: weighted }: { useWeights: boolean }) =>
+      randomPick(weighted),
   });
   const rateMutation = useMutation({
-    mutationFn: ({ restaurantId, score }: { restaurantId: number; score: number }) =>
-      upsertRating(restaurantId, score),
+    mutationFn: ({
+      restaurantId,
+      score,
+    }: {
+      restaurantId: number;
+      score: number;
+    }) => upsertRating(restaurantId, score),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.restaurants });
       queryClient.invalidateQueries({ queryKey: queryKeys.myRatings });
@@ -46,8 +65,18 @@ export default function Home() {
   });
 
   const allRestaurants = useMemo(() => {
-    return (restaurantList || []).map(r => ({ id: r.id, name: r.name, emoji: r.emoji }));
+    return (restaurantList || []).map(r => ({
+      id: r.id,
+      name: r.name,
+      emoji: r.emoji,
+    }));
   }, [restaurantList]);
+
+  useEffect(() => {
+    return () => {
+      clearSpinFinishTimeout();
+    };
+  }, []);
 
   const handleSpin = async () => {
     if (allRestaurants.length === 0) {
@@ -55,6 +84,8 @@ export default function Home() {
       return;
     }
 
+    clearSpinFinishTimeout();
+    spinStartedAtRef.current = Date.now();
     setIsSpinning(true);
     setResults(null);
     setSelectedResult(null);
@@ -64,13 +95,19 @@ export default function Home() {
       // Set results immediately so each slot can reveal independently when it stops
       setResults(picks);
 
-      // Keep global spinning state until the longest column animation ends
-      setTimeout(() => {
+      const elapsed = Date.now() - spinStartedAtRef.current;
+      const remainingSpinTime = Math.max(
+        SLOT_MACHINE_COMPLETE_DELAY_MS - elapsed,
+        250
+      );
+      spinFinishTimeoutRef.current = setTimeout(() => {
         setIsSpinning(false);
-      }, 3200);
-    } catch (error: any) {
+        spinFinishTimeoutRef.current = null;
+      }, remainingSpinTime);
+    } catch (error: unknown) {
+      clearSpinFinishTimeout();
       setIsSpinning(false);
-      toast.error(error.message || "抽取失败");
+      toast.error(error instanceof Error ? error.message : "抽取失败");
     }
   };
 
@@ -83,7 +120,10 @@ export default function Home() {
   const handleRate = async () => {
     if (!selectedResult || ratingScore === 0) return;
     try {
-      await rateMutation.mutateAsync({ restaurantId: selectedResult.id, score: ratingScore });
+      await rateMutation.mutateAsync({
+        restaurantId: selectedResult.id,
+        score: ratingScore,
+      });
       toast.success("评分成功！");
       setShowResultDialog(false);
     } catch {
@@ -91,8 +131,7 @@ export default function Home() {
     }
   };
 
-  // Count duplicates in results
-  const getResultSummary = () => {
+  const resultSummary = useMemo(() => {
     if (!results) return null;
     const counts = new Map<number, { count: number; restaurant: PickResult }>();
     results.forEach(r => {
@@ -104,9 +143,7 @@ export default function Home() {
       }
     });
     return Array.from(counts.values()).sort((a, b) => b.count - a.count);
-  };
-
-  const resultSummary = getResultSummary();
+  }, [results]);
 
   return (
     <div className="container py-8 sm:py-12">
@@ -135,7 +172,7 @@ export default function Home() {
         transition={{ duration: 0.6, delay: 0.1, ease: [0.23, 1, 0.32, 1] }}
         className="max-w-2xl mx-auto"
       >
-        <div className="bg-card rounded-3xl border border-border/60 shadow-xl shadow-black/[0.03] p-6 sm:p-8">
+        <div className="bg-card rounded-3xl border border-border/60 shadow-xl shadow-black/[0.03] p-4 sm:p-8">
           <SlotMachine
             results={results}
             isSpinning={isSpinning}
@@ -150,7 +187,10 @@ export default function Home() {
               onCheckedChange={setUseWeights}
               disabled={isSpinning}
             />
-            <Label htmlFor="use-weights" className="text-sm text-muted-foreground cursor-pointer">
+            <Label
+              htmlFor="use-weights"
+              className="text-sm text-muted-foreground cursor-pointer"
+            >
               <Sparkles className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
               以评分作为权重
             </Label>
@@ -168,8 +208,6 @@ export default function Home() {
               {isSpinning ? "抽取中..." : "开始抽取"}
             </Button>
           </div>
-
-
         </div>
       </motion.div>
 
@@ -203,17 +241,21 @@ export default function Home() {
                     onClick={() => handleSelectResult(restaurant)}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
-                        count >= 2
-                          ? "bg-[oklch(0.75_0.15_75)] text-white"
-                          : "bg-muted text-muted-foreground"
-                      }`}>
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
+                          count >= 2
+                            ? "bg-[oklch(0.75_0.15_75)] text-white"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {count}
                       </div>
                       <div>
                         <p className="font-medium">{restaurant.name}</p>
                         {restaurant.category && (
-                          <p className="text-xs text-muted-foreground">{restaurant.category}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {restaurant.category}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -239,18 +281,27 @@ export default function Home() {
       <Dialog open={showResultDialog} onOpenChange={setShowResultDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-xl" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            <DialogTitle
+              className="text-xl"
+              style={{ fontFamily: "'Noto Serif SC', serif" }}
+            >
               {selectedResult?.name}
             </DialogTitle>
           </DialogHeader>
           <div className="py-4">
             {selectedResult?.description && (
-              <p className="text-sm text-muted-foreground mb-4">{selectedResult.description}</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {selectedResult.description}
+              </p>
             )}
             {isAuthenticated ? (
               <div className="space-y-3">
                 <p className="text-sm font-medium">为这家餐厅评分：</p>
-                <StarRating value={ratingScore} onChange={setRatingScore} size="lg" />
+                <StarRating
+                  value={ratingScore}
+                  onChange={setRatingScore}
+                  size="lg"
+                />
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -259,7 +310,10 @@ export default function Home() {
             )}
           </div>
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setShowResultDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowResultDialog(false)}
+            >
               {isAuthenticated ? "跳过" : "关闭"}
             </Button>
             {isAuthenticated && (
